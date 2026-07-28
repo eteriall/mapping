@@ -10,8 +10,11 @@ services:
     environment:
       DB_HOST: mapping-postgres
       DB_PORT: 5432
+      MEDIA_ROOT: /app/server/media
+      MAX_UPLOAD_BYTES: 524288000
     volumes:
       - ./backend/server:/app/server
+      - media_data:/app/server/media
     depends_on:
       mapping-postgres:
         condition: service_healthy
@@ -37,6 +40,8 @@ services:
     depends_on:
       - mapping-backend
       - mapping-frontend
+    volumes:
+      - media_data:/srv/mapping-media:ro
 
   mapping-postgres:
     restart: unless-stopped
@@ -56,6 +61,7 @@ services:
 
 volumes:
   postgres_data:
+  media_data:
 
 networks:
   proxy:

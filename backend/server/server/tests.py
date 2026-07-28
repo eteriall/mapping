@@ -7,8 +7,8 @@ class AdminThemeConfigurationTests(SimpleTestCase):
 
     def test_unfold_app_precedes_admin_app(self):
         """Ensures Unfold is registered before Django admin."""
-        unfold_index = settings.INSTALLED_APPS.index('unfold')
-        admin_index = settings.INSTALLED_APPS.index('django.contrib.admin')
+        unfold_index = settings.INSTALLED_APPS.index("unfold")
+        admin_index = settings.INSTALLED_APPS.index("django.contrib.admin")
         self.assertLess(unfold_index, admin_index)
 
 
@@ -18,18 +18,18 @@ class StaticConfigurationTests(SimpleTestCase):
     def test_whitenoise_middleware_follows_security_middleware(self):
         """Ensures WhiteNoise middleware is placed after security middleware."""
         security_index = settings.MIDDLEWARE.index(
-            'django.middleware.security.SecurityMiddleware'
+            "django.middleware.security.SecurityMiddleware"
         )
         whitenoise_index = settings.MIDDLEWARE.index(
-            'whitenoise.middleware.WhiteNoiseMiddleware'
+            "whitenoise.middleware.WhiteNoiseMiddleware"
         )
         self.assertGreater(whitenoise_index, security_index)
 
     def test_staticfiles_storage_uses_whitenoise_backend(self):
         """Ensures staticfiles storage backend is WhiteNoise compressed manifest."""
-        backend = settings.STORAGES['staticfiles']['BACKEND']
+        backend = settings.STORAGES["staticfiles"]["BACKEND"]
         self.assertEqual(
-            backend, 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+            backend, "whitenoise.storage.CompressedManifestStaticFilesStorage"
         )
 
 
@@ -38,7 +38,7 @@ class ContentSecurityPolicyConfigurationTests(SimpleTestCase):
 
     def test_csp_middleware_is_enabled(self):
         """Ensures django-csp middleware is registered in middleware list."""
-        self.assertIn('csp.middleware.CSPMiddleware', settings.MIDDLEWARE)
+        self.assertIn("csp.middleware.CSPMiddleware", settings.MIDDLEWARE)
 
     def test_csp_default_src_is_self_only(self):
         """Ensures default CSP source list is restricted to self."""
@@ -50,9 +50,9 @@ class ApiConfigurationTests(SimpleTestCase):
 
     def test_api_health_endpoint_returns_ok(self):
         """Ensures the health endpoint responds with a 200 status."""
-        response = self.client.get('/api/health')
+        response = self.client.get("/api/health")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {'status': 'ok'})
+        self.assertEqual(response.json(), {"status": "ok"})
 
 
 class DjangoRouteServingTests(SimpleTestCase):
@@ -60,10 +60,10 @@ class DjangoRouteServingTests(SimpleTestCase):
 
     def test_admin_route_is_served_by_django(self):
         """Ensures the admin route does not return the frontend index page."""
-        response = self.client.get('/admin/')
+        response = self.client.get("/admin/")
         self.assertNotEqual(response.status_code, 404)
 
     def test_static_route_is_served_by_django(self):
         """Ensures a Django admin static asset is available from the static route."""
-        response = self.client.get('/static/admin/css/base.css')
+        response = self.client.get("/static/admin/css/base.css")
         self.assertEqual(response.status_code, 200)

@@ -1,15 +1,25 @@
 "use client";
 
 import {
-  ActivityIcon,
-  CheckCircle2Icon,
-  ExternalLinkIcon,
+  ArrowRightIcon,
+  PlusIcon,
   RefreshCwIcon,
-  ServerIcon,
-  Settings2Icon,
+  Trash2Icon,
 } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,232 +32,255 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Field,
-  FieldContent,
   FieldDescription,
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Progress } from "@/components/ui/progress";
-import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Skeleton } from "@/components/ui/skeleton";
+import { apiRequest } from "@/lib/api";
+import type { Project } from "@/lib/types";
 
-type ApiState = "checking" | "connected" | "failed";
-
-export default function HomePage() {
-  const [apiState, setApiState] = useState<ApiState>("checking");
-  const [apiMessage, setApiMessage] = useState("Contacting Django API");
-  const [refreshKey, setRefreshKey] = useState(0);
+export default function ProjectDashboard() {
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [projectName, setProjectName] = useState("Untitled Mapping");
+  const [creating, setCreating] = useState(false);
+  const [seeding, setSeeding] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
 
   useEffect(() => {
-    const controller = new AbortController();
-
-    async function checkApiHealth() {
-      setApiState("checking");
-      setApiMessage("Contacting Django API");
-
-      try {
-        const response = await fetch("/api/health", {
-          cache: "no-store",
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          throw new Error(`API returned ${response.status}`);
-        }
-
-        const payload = (await response.json()) as { status?: string };
-        setApiState(payload.status === "ok" ? "connected" : "failed");
-        setApiMessage(
-          payload.status === "ok"
-            ? "Django API responded with status ok"
-            : "Django API responded with an unexpected payload",
+    apiRequest<Project[]>("/projects")
+      .then(setProjects)
+      .catch((error: unknown) => {
+        toast.error(
+          error instanceof Error ? error.message : "Could not load projects.",
         );
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          setApiState("failed");
-          setApiMessage(
-            error instanceof Error ? error.message : "Unable to reach API",
-          );
-        }
-      }
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function createProject() {
+    setCreating(true);
+    try {
+      const project = await apiRequest<Project>("/projects", {
+        method: "POST",
+        body: JSON.stringify({ name: projectName }),
+      });
+      window.location.assign(`/projects/${project.id}`);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Could not create project.",
+      );
+      setCreating(false);
     }
+  }
 
-    void checkApiHealth();
+  async function deleteProject() {
+    if (!deleteTarget) {
+      return;
+    }
+    try {
+      await apiRequest<void>(`/projects/${deleteTarget.id}`, {
+        method: "DELETE",
+      });
+      setProjects((items) =>
+        items.filter((project) => project.id !== deleteTarget.id),
+      );
+      toast.success("Project deleted.");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Could not delete project.",
+      );
+    } finally {
+      setDeleteTarget(null);
+    }
+  }
 
-    return () => controller.abort();
-  }, [refreshKey]);
-
-  const isConnected = apiState === "connected";
-  const progressValue = apiState === "checking" ? 42 : isConnected ? 100 : 16;
+  async function seedProject(seedId: string, projectName: string) {
+    setSeeding(seedId);
+    try {
+      const project = await apiRequest<Project>(`/projects/seeds/${seedId}`, {
+        method: "POST",
+      });
+      setProjects((items) => {
+        const existingIndex = items.findIndex((item) => item.id === project.id);
+        if (existingIndex === -1) {
+          return [project, ...items];
+        }
+        return items.map((item) => (item.id === project.id ? project : item));
+      });
+      toast.success(`${projectName} is ready.`);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : `Could not seed ${projectName}.`,
+      );
+    } finally {
+      setSeeding(null);
+    }
+  }
 
   return (
     <main className="min-h-screen bg-background">
-      <section className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-8 px-6 py-8 md:px-10">
-        <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-          <div className="flex max-w-2xl flex-col gap-3">
-            <Badge className="w-fit" variant="secondary">
-              Django + Next.js 16 + shadcn/ui
-            </Badge>
-            <div className="flex flex-col gap-3">
-              <h1 className="text-4xl font-semibold md:text-6xl">
-                Full-stack mapping dashboard
-              </h1>
-              <p className="max-w-xl text-base text-muted-foreground md:text-lg">
-                A connected demo page using local shadcn components and the
-                existing Django Ninja health endpoint.
-              </p>
+      <section className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-8 md:px-10 md:py-12">
+        <section className="flex flex-col gap-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <h1 className="text-2xl font-semibold">Projects</h1>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button onClick={() => setCreateOpen(true)} size="sm">
+                <PlusIcon data-icon="inline-start" />
+                New project
+              </Button>
+              <Button
+                disabled={seeding !== null}
+                onClick={() =>
+                  void seedProject("neon-cathedral", "Neon Cathedral Demo")
+                }
+                size="sm"
+                variant="outline"
+              >
+                <RefreshCwIcon data-icon="inline-start" />
+                Seed / restore Neon demo
+              </Button>
+              <Button
+                disabled={seeding !== null}
+                onClick={() =>
+                  void seedProject("bolshoi-theatre", "Bolshoi Theatre")
+                }
+                size="sm"
+                variant="outline"
+              >
+                <RefreshCwIcon data-icon="inline-start" />
+                Seed / restore Bolshoi
+              </Button>
+              <Badge variant="outline">
+                {projects.length}{" "}
+                {projects.length === 1 ? "project" : "projects"}
+              </Badge>
             </div>
           </div>
-          <Button onClick={() => setRefreshKey((key) => key + 1)}>
-            <RefreshCwIcon data-icon="inline-start" />
-            Check API
-          </Button>
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-[1.1fr_0.9fr]">
-          <Card className="[--card-spacing:--spacing(6)]">
-            <CardHeader>
-              <CardTitle>Service status</CardTitle>
-              <CardDescription>
-                Frontend-to-backend connectivity through `/api/health`.
-              </CardDescription>
-              <CardAction>
-                <Badge variant={isConnected ? "default" : "outline"}>
-                  {apiState}
-                </Badge>
-              </CardAction>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-5">
-              <div className="grid gap-4 sm:grid-cols-3">
-                <StatusMetric
-                  icon={ServerIcon}
-                  label="Backend"
-                  value={isConnected ? "Online" : "Pending"}
-                />
-                <StatusMetric
-                  icon={ActivityIcon}
-                  label="Endpoint"
-                  value="/api/health"
-                />
-                <StatusMetric
-                  icon={CheckCircle2Icon}
-                  label="Payload"
-                  value={isConnected ? "{ status: ok }" : "Waiting"}
-                />
-              </div>
-              <Separator />
-              <div className="flex flex-col gap-3">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm font-medium">Connection check</span>
-                  <span className="text-sm text-muted-foreground">
-                    {progressValue}%
-                  </span>
-                </div>
-                <Progress value={progressValue} />
-                <p className="text-sm text-muted-foreground">{apiMessage}</p>
-              </div>
-            </CardContent>
-            <CardFooter className="justify-between gap-3">
-              <span className="text-sm text-muted-foreground">
-                Served by Next.js, proxied to Django.
-              </span>
-              <Button
-                nativeButton={false}
-                render={
-                  <a href="/api/health">
-                    Open endpoint
-                    <ExternalLinkIcon data-icon="inline-end" />
-                  </a>
-                }
-                variant="outline"
-              />
-            </CardFooter>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Demo controls</CardTitle>
-              <CardDescription>
-                Components installed as editable project source.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Tabs defaultValue="settings">
-                <TabsList>
-                  <TabsTrigger value="settings">
-                    <Settings2Icon data-icon="inline-start" />
-                    Settings
-                  </TabsTrigger>
-                  <TabsTrigger value="preview">Preview</TabsTrigger>
-                </TabsList>
-                <TabsContent className="pt-5" value="settings">
-                  <FieldGroup>
-                    <Field>
-                      <FieldLabel htmlFor="project-name">
-                        Project name
-                      </FieldLabel>
-                      <Input
-                        id="project-name"
-                        readOnly
-                        value="django-react-mapping"
-                      />
-                    </Field>
-                    <Field
-                      className="rounded-lg border p-4"
-                      orientation="horizontal"
-                    >
-                      <FieldContent>
-                        <FieldLabel htmlFor="proxy-mode">
-                          Proxy API route
-                        </FieldLabel>
-                        <FieldDescription>
-                          Use the existing `/api` route for Django.
-                        </FieldDescription>
-                      </FieldContent>
-                      <Switch defaultChecked id="proxy-mode" />
-                    </Field>
-                  </FieldGroup>
-                </TabsContent>
-                <TabsContent className="pt-5" value="preview">
-                  <div className="flex flex-col gap-4 rounded-lg border p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="font-medium">Stack readiness</span>
-                      <Badge variant="secondary">Updated</Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      Next, React, Tailwind, and shadcn are installed from the
-                      current npm registry versions.
-                    </p>
-                  </div>
-                </TabsContent>
-              </Tabs>
-            </CardContent>
-          </Card>
-        </div>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {loading
+              ? Array.from({ length: 3 }).map((_, index) => (
+                  <Skeleton className="h-56 rounded-xl" key={index} />
+                ))
+              : projects.map((project) => (
+                  <Card key={project.id}>
+                    <CardHeader>
+                      <CardTitle>{project.name}</CardTitle>
+                      <CardDescription>
+                        {project.duration}s · {project.frameRate} fps ·{" "}
+                        {project.stageWidth} × {project.stageDepth}m
+                      </CardDescription>
+                      <CardAction>
+                        <Button
+                          aria-label={`Delete ${project.name}`}
+                          onClick={() => setDeleteTarget(project)}
+                          size="icon-sm"
+                          variant="ghost"
+                        >
+                          <Trash2Icon />
+                        </Button>
+                      </CardAction>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex h-24 items-end rounded-lg bg-muted p-3">
+                        <div className="flex items-end gap-2">
+                          <span className="h-10 w-14 rounded-sm bg-primary/25" />
+                          <span className="h-16 w-8 rounded-sm bg-primary/45" />
+                          <span className="h-8 w-16 rounded-sm bg-primary/20" />
+                        </div>
+                      </div>
+                    </CardContent>
+                    <CardFooter className="justify-between">
+                      <span className="text-xs text-muted-foreground">
+                        Updated{" "}
+                        {new Date(project.updatedAt).toLocaleDateString()}
+                      </span>
+                      <Button
+                        nativeButton={false}
+                        render={<Link href={`/projects/${project.id}`} />}
+                        variant="outline"
+                      >
+                        Open studio
+                        <ArrowRightIcon data-icon="inline-end" />
+                      </Button>
+                    </CardFooter>
+                  </Card>
+                ))}
+          </div>
+        </section>
       </section>
-    </main>
-  );
-}
 
-function StatusMetric({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: typeof ServerIcon;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="flex min-h-28 flex-col justify-between gap-4 rounded-lg border p-4">
-      <Icon className="text-muted-foreground" />
-      <div className="flex flex-col gap-1">
-        <span className="text-sm text-muted-foreground">{label}</span>
-        <span className="truncate font-medium">{value}</span>
-      </div>
-    </div>
+      <Dialog onOpenChange={setCreateOpen} open={createOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create mapping project</DialogTitle>
+          </DialogHeader>
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="project-name">Project name</FieldLabel>
+              <Input
+                autoFocus
+                id="project-name"
+                onChange={(event) => setProjectName(event.target.value)}
+                value={projectName}
+              />
+              <FieldDescription>
+                You can rename it later in project settings.
+              </FieldDescription>
+            </Field>
+          </FieldGroup>
+          <DialogFooter>
+            <Button onClick={() => setCreateOpen(false)} variant="outline">
+              Cancel
+            </Button>
+            <Button
+              disabled={creating || !projectName.trim()}
+              onClick={() => void createProject()}
+            >
+              Create project
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteTarget(null);
+          }
+        }}
+        open={deleteTarget !== null}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {deleteTarget?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently removes the scene, timelines, and uploaded
+              assets for this project.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => void deleteProject()}
+              variant="destructive"
+            >
+              Delete project
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </main>
   );
 }

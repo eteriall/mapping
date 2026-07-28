@@ -11,5 +11,6 @@ cd "$PROJECT_DIR"
 : "${BACKEND_PORT:?BACKEND_PORT must be set}"
 
 python manage.py migrate
+python manage.py seed_studio
 python manage.py collectstatic --noinput
 gunicorn server.wsgi:application --reload --bind 0.0.0.0:${BACKEND_PORT}

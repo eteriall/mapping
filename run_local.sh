@@ -81,6 +81,8 @@ fi
 : "${DB_PASSWORD:?DB_PASSWORD must be set}"
 : "${DB_HOST:?DB_HOST must be set}"
 : "${DB_PORT:?DB_PORT must be set}"
+: "${MEDIA_ROOT:?MEDIA_ROOT must be set}"
+: "${MAX_UPLOAD_BYTES:?MAX_UPLOAD_BYTES must be set}"
 
 if lsof -tiTCP:"${BACKEND_PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
   lsof -tiTCP:"${BACKEND_PORT}" -sTCP:LISTEN | xargs kill -9

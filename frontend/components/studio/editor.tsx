@@ -4,10 +4,8 @@ import {
   ArrowLeftIcon,
   BoxIcon,
   CameraIcon,
-  CheckIcon,
   ClapperboardIcon,
   CloudAlertIcon,
-  CloudUploadIcon,
   Layers3Icon,
   Move3dIcon,
   PanelLeftCloseIcon,
@@ -36,7 +34,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -60,6 +57,10 @@ import {
   ProjectSettings,
   SceneHierarchy,
 } from "@/components/studio/library-tabs";
+import {
+  EditorSkeleton,
+  SaveBadge,
+} from "@/components/studio/editor-status";
 import { Inspector } from "@/components/studio/inspector";
 import { ProjectorTimeline } from "@/components/studio/timeline";
 import { loadWorkspace } from "@/lib/api";
@@ -562,45 +563,6 @@ export function StudioEditor({ projectId }: { projectId: string }) {
         {activeTab === "equipment" ? <EquipmentLibrary /> : null}
         {activeTab === "settings" ? <ProjectSettings /> : null}
       </div>
-    </main>
-  );
-}
-
-function SaveBadge({ state }: { state: "saved" | "saving" | "error" }) {
-  if (state === "saving") {
-    return (
-      <Badge variant="outline">
-        <CloudUploadIcon />
-        Saving
-      </Badge>
-    );
-  }
-  if (state === "error") {
-    return (
-      <Badge variant="destructive">
-        <CloudAlertIcon />
-        Save failed
-      </Badge>
-    );
-  }
-  return (
-    <Badge variant="outline">
-      <CheckIcon />
-      Saved
-    </Badge>
-  );
-}
-
-function EditorSkeleton() {
-  return (
-    <main className="flex h-screen flex-col bg-background p-3">
-      <Skeleton className="h-11 w-full rounded-lg" />
-      <div className="mt-3 grid min-h-0 flex-1 grid-cols-[230px_minmax(0,1fr)_300px] gap-3">
-        <Skeleton className="h-full rounded-lg" />
-        <Skeleton className="h-full rounded-lg" />
-        <Skeleton className="h-full rounded-lg" />
-      </div>
-      <Skeleton className="mt-3 h-56 w-full rounded-lg" />
     </main>
   );
 }

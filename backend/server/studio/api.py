@@ -1,16 +1,31 @@
 from pathlib import Path
-from typing import Any
 from uuid import UUID
 
 from django.conf import settings
 from django.db.models import ProtectedError, RestrictedError
 from django.shortcuts import get_object_or_404
 from django.utils.text import slugify
-from ninja import Body, File, Router, Schema
+from ninja import File, Router
 from ninja.errors import HttpError
 from ninja.files import UploadedFile
-from pydantic import Field as SchemaField
 
+from studio.demo_services import ensure_demo_project
+from studio.api_schemas import (
+    ClipCreate,
+    ClipPatch,
+    EquipmentCreate,
+    EquipmentPatch,
+    GeneratorCreate,
+    MediaPatch,
+    ModelCreate,
+    ModelPatch,
+    ProjectCreate,
+    ProjectPatch,
+    SceneObjectCreate,
+    SceneObjectPatch,
+    TrackCreate,
+    TrackPatch,
+)
 from studio.models import (
     EquipmentTemplate,
     MediaAsset,
@@ -20,209 +35,18 @@ from studio.models import (
     TimelineClip,
     TimelineTrack,
 )
-from studio.services import create_starter_project, ensure_demo_project
+from studio.serializers import (
+    serialize_clip,
+    serialize_equipment,
+    serialize_media,
+    serialize_model,
+    serialize_project,
+    serialize_scene_object,
+    serialize_track,
+)
+from studio.services import create_starter_project
 
 router = Router(tags=["studio"])
-
-
-class ProjectCreate(Schema):
-    """Validates project creation data."""
-
-    name: str
-
-
-class ProjectPatch(Schema):
-    """Validates editable project settings."""
-
-    name: str | None = None
-    duration: float | None = None
-    frame_rate: int | None = None
-    stage_width: float | None = None
-    stage_depth: float | None = None
-    stage_height: float | None = None
-    ambient_color: str | None = None
-    ambient_intensity: float | None = None
-    free_camera_position: dict[str, float] | None = None
-    free_camera_target: dict[str, float] | None = None
-
-
-class GeneratorCreate(Schema):
-    """Validates procedural media creation data."""
-
-    name: str
-    generator_type: str
-    generator_config: dict[str, Any]
-
-
-class ModelCreate(Schema):
-    """Validates primitive model creation data."""
-
-    name: str
-    primitive_type: str
-    config: dict[str, Any]
-
-
-class EquipmentCreate(Schema):
-    """Validates equipment template creation data."""
-
-    name: str
-    category: str
-    specs: dict[str, Any]
-
-
-class SceneObjectCreate(Schema):
-    """Validates scene object creation data."""
-
-    project_id: UUID
-    name: str
-    object_type: str
-    model_asset_id: int | None = None
-    equipment_template_id: int | None = None
-    position: dict[str, float] = SchemaField(
-        default_factory=lambda: {"x": 0, "y": 0, "z": 0}
-    )
-    rotation: dict[str, float] = SchemaField(
-        default_factory=lambda: {"x": 0, "y": 0, "z": 0}
-    )
-    scale: dict[str, float] = SchemaField(
-        default_factory=lambda: {"x": 1, "y": 1, "z": 1}
-    )
-    properties: dict[str, Any] = SchemaField(default_factory=dict)
-
-
-class TrackCreate(Schema):
-    """Validates timeline track creation data."""
-
-    project_id: UUID
-    projector_id: int
-    name: str
-    order: int = 0
-    opacity: float = 1
-    blend_mode: str = "normal"
-
-
-class ClipCreate(Schema):
-    """Validates timeline clip creation data."""
-
-    track_id: int
-    media_asset_id: int
-    start: float
-    duration: float
-    in_point: float = 0
-    playback_rate: float = 1
-    loop: bool = True
-    opacity: float = 1
-    fade_in: float = 0
-    fade_out: float = 0
-
-
-def serialize_project(project):
-    """Serializes a project for the editor."""
-    return {
-        "id": str(project.id),
-        "name": project.name,
-        "duration": project.duration,
-        "frameRate": project.frame_rate,
-        "stageWidth": project.stage_width,
-        "stageDepth": project.stage_depth,
-        "stageHeight": project.stage_height,
-        "ambientColor": project.ambient_color,
-        "ambientIntensity": project.ambient_intensity,
-        "freeCameraPosition": project.free_camera_position,
-        "freeCameraTarget": project.free_camera_target,
-        "createdAt": project.created_at.isoformat(),
-        "updatedAt": project.updated_at.isoformat(),
-    }
-
-
-def serialize_media(asset):
-    """Serializes a media asset for the editor."""
-    return {
-        "id": asset.id,
-        "projectId": str(asset.project_id),
-        "name": asset.name,
-        "kind": asset.kind,
-        "url": asset.file.url if asset.file else None,
-        "mimeType": asset.mime_type,
-        "duration": asset.duration,
-        "width": asset.width,
-        "height": asset.height,
-        "generatorType": asset.generator_type,
-        "generatorConfig": asset.generator_config,
-    }
-
-
-def serialize_model(asset):
-    """Serializes a model asset for the editor."""
-    return {
-        "id": asset.id,
-        "projectId": str(asset.project_id),
-        "name": asset.name,
-        "kind": asset.kind,
-        "primitiveType": asset.primitive_type,
-        "url": asset.file.url if asset.file else None,
-        "config": asset.config,
-    }
-
-
-def serialize_equipment(template):
-    """Serializes an equipment template for the editor."""
-    return {
-        "id": template.id,
-        "name": template.name,
-        "slug": template.slug,
-        "category": template.category,
-        "specs": template.specs,
-        "isSeeded": template.is_seeded,
-    }
-
-
-def serialize_scene_object(scene_object):
-    """Serializes a placed scene object for the editor."""
-    return {
-        "id": scene_object.id,
-        "projectId": str(scene_object.project_id),
-        "name": scene_object.name,
-        "objectType": scene_object.object_type,
-        "modelAssetId": scene_object.model_asset_id,
-        "equipmentTemplateId": scene_object.equipment_template_id,
-        "position": scene_object.position,
-        "rotation": scene_object.rotation,
-        "scale": scene_object.scale,
-        "properties": scene_object.properties,
-        "visible": scene_object.visible,
-    }
-
-
-def serialize_track(track):
-    """Serializes a projector timeline track and its clips."""
-    return {
-        "id": track.id,
-        "projectId": str(track.project_id),
-        "projectorId": track.projector_id,
-        "name": track.name,
-        "order": track.order,
-        "opacity": track.opacity,
-        "blendMode": track.blend_mode,
-        "clips": [serialize_clip(clip) for clip in track.clips.all()],
-    }
-
-
-def serialize_clip(clip):
-    """Serializes a timeline clip."""
-    return {
-        "id": clip.id,
-        "trackId": clip.track_id,
-        "mediaAssetId": clip.media_asset_id,
-        "start": clip.start,
-        "duration": clip.duration,
-        "inPoint": clip.in_point,
-        "playbackRate": clip.playback_rate,
-        "loop": clip.loop,
-        "opacity": clip.opacity,
-        "fadeIn": clip.fade_in,
-        "fadeOut": clip.fade_out,
-    }
 
 
 def apply_patch(instance, payload, field_map=None):
@@ -376,20 +200,19 @@ def upload_video(
 
 
 @router.patch("/media/{asset_id}")
-def update_media(request, asset_id: int, payload: Body[dict]):
+def update_media(request, asset_id: int, payload: MediaPatch):
     """Updates editable media asset fields."""
     asset = get_object_or_404(MediaAsset, id=asset_id)
-    for field, key in (
-        ("name", "name"),
-        ("generator_type", "generatorType"),
-        ("generator_config", "generatorConfig"),
-        ("duration", "duration"),
-    ):
-        if key in payload:
-            setattr(asset, field, payload[key])
-    asset.full_clean()
-    asset.save()
-    return serialize_media(asset)
+    return serialize_media(
+        apply_patch(
+            asset,
+            payload,
+            {
+                "generatorType": "generator_type",
+                "generatorConfig": "generator_config",
+            },
+        )
+    )
 
 
 @router.delete("/media/{asset_id}", response={204: None, 409: dict})
@@ -453,15 +276,10 @@ def upload_glb(
 
 
 @router.patch("/models/{asset_id}")
-def update_model(request, asset_id: int, payload: Body[dict]):
+def update_model(request, asset_id: int, payload: ModelPatch):
     """Updates editable model asset fields."""
     asset = get_object_or_404(ModelAsset, id=asset_id)
-    for field, key in (("name", "name"), ("config", "config")):
-        if key in payload:
-            setattr(asset, field, payload[key])
-    asset.full_clean()
-    asset.save()
-    return serialize_model(asset)
+    return serialize_model(apply_patch(asset, payload))
 
 
 @router.delete("/models/{asset_id}", response={204: None, 409: dict})
@@ -498,18 +316,12 @@ def create_equipment(request, payload: EquipmentCreate):
 
 
 @router.patch("/equipment/{template_id}")
-def update_equipment(request, template_id: int, payload: Body[dict]):
+def update_equipment(request, template_id: int, payload: EquipmentPatch):
     """Updates a custom equipment template."""
     template = get_object_or_404(EquipmentTemplate, id=template_id)
     if template.is_seeded:
         raise HttpError(409, "Duplicate seeded equipment before editing it.")
-    if "name" in payload:
-        template.name = payload["name"]
-    if "specs" in payload:
-        template.specs = payload["specs"]
-    template.full_clean()
-    template.save()
-    return serialize_equipment(template)
+    return serialize_equipment(apply_patch(template, payload))
 
 
 @router.post("/scene-objects", response={201: dict})
@@ -543,23 +355,10 @@ def create_scene_object(request, payload: SceneObjectCreate):
 
 
 @router.patch("/scene-objects/{scene_object_id}")
-def update_scene_object(request, scene_object_id: int, payload: Body[dict]):
+def update_scene_object(request, scene_object_id: int, payload: SceneObjectPatch):
     """Updates a placed scene object."""
     scene_object = get_object_or_404(SceneObject, id=scene_object_id)
-    field_map = {
-        "name": "name",
-        "position": "position",
-        "rotation": "rotation",
-        "scale": "scale",
-        "properties": "properties",
-        "visible": "visible",
-    }
-    for key, field in field_map.items():
-        if key in payload:
-            setattr(scene_object, field, payload[key])
-    scene_object.full_clean()
-    scene_object.save()
-    return serialize_scene_object(scene_object)
+    return serialize_scene_object(apply_patch(scene_object, payload))
 
 
 @router.delete("/scene-objects/{scene_object_id}", response={204: None})
@@ -591,21 +390,10 @@ def create_track(request, payload: TrackCreate):
 
 
 @router.patch("/tracks/{track_id}")
-def update_track(request, track_id: int, payload: Body[dict]):
+def update_track(request, track_id: int, payload: TrackPatch):
     """Updates a projector timeline track."""
     track = get_object_or_404(TimelineTrack, id=track_id)
-    field_map = {
-        "name": "name",
-        "order": "order",
-        "opacity": "opacity",
-        "blendMode": "blend_mode",
-    }
-    for key, field in field_map.items():
-        if key in payload:
-            setattr(track, field, payload[key])
-    track.full_clean()
-    track.save()
-    return serialize_track(track)
+    return serialize_track(apply_patch(track, payload, {"blendMode": "blend_mode"}))
 
 
 @router.delete("/tracks/{track_id}", response={204: None})
@@ -639,13 +427,14 @@ def create_clip(request, payload: ClipCreate):
 
 
 @router.patch("/clips/{clip_id}")
-def update_clip(request, clip_id: int, payload: Body[dict]):
+def update_clip(request, clip_id: int, payload: ClipPatch):
     """Updates a timeline clip."""
     clip = get_object_or_404(TimelineClip, id=clip_id)
-    if "trackId" in payload:
+    values = payload.model_dump(exclude_none=True)
+    if "trackId" in values:
         clip.track = get_object_or_404(
             TimelineTrack,
-            id=payload["trackId"],
+            id=values.pop("trackId"),
             project=clip.track.project,
         )
     field_map = {
@@ -658,9 +447,8 @@ def update_clip(request, clip_id: int, payload: Body[dict]):
         "fadeIn": "fade_in",
         "fadeOut": "fade_out",
     }
-    for key, field in field_map.items():
-        if key in payload:
-            setattr(clip, field, payload[key])
+    for key, value in values.items():
+        setattr(clip, field_map[key], value)
     clip.full_clean()
     ensure_clip_does_not_overlap(
         clip.track, clip.start, clip.duration, exclude_id=clip.id

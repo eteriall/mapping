@@ -1,11 +1,8 @@
 from django.core.management.base import BaseCommand
 
+from studio.demo_services import DEMO_PROJECTS, ensure_demo_project
 from studio.models import Project
-from studio.services import (
-    DEMO_PROJECTS,
-    ensure_demo_project,
-    ensure_equipment_templates,
-)
+from studio.services import ensure_equipment_templates
 
 
 class Command(BaseCommand):

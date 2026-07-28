@@ -99,9 +99,9 @@ class SeedStudioTests(TestCase):
             8,
         )
         categories = list(
-            project.scene_objects.filter(
-                equipment_template__isnull=False
-            ).values_list("equipment_template__category", flat=True)
+            project.scene_objects.filter(equipment_template__isnull=False).values_list(
+                "equipment_template__category", flat=True
+            )
         )
         self.assertEqual(categories.count("projector"), 1)
         self.assertEqual(categories.count("light"), 0)
@@ -309,6 +309,17 @@ class SceneAndTimelineApiTests(TestCase):
         self.assertEqual(response.json()["properties"], properties)
         light.refresh_from_db()
         self.assertEqual(light.properties, properties)
+
+    def test_patch_rejects_unknown_fields(self):
+        """Ensures patch endpoints enforce their declared request contracts."""
+        scene_object = self.project.scene_objects.first()
+        response = self.client.patch(
+            f"/api/scene-objects/{scene_object.id}",
+            data=json.dumps({"unexpected": "value"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 422)
 
     def test_clip_creation_rejects_media_from_another_project(self):
         """Ensures timeline clips cannot reference cross-project media."""

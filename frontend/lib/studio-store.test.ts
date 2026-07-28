@@ -85,4 +85,77 @@ describe("studio store history", () => {
 
     expect(useStudioStore.getState().playbackSpeed).toBe(1);
   });
+
+  it("ignores a stale scene-object response that finishes last", async () => {
+    const responses: Array<(value: SceneObject) => void> = [];
+    vi.mocked(apiRequest).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          responses.push(resolve as (value: SceneObject) => void);
+        }),
+    );
+
+    const firstPosition = { x: 1, y: 2, z: 3 };
+    const latestPosition = { x: 4, y: 5, z: 6 };
+    const firstRequest = useStudioStore
+      .getState()
+      .patchSceneObject(sceneObject.id, { position: firstPosition });
+    const latestRequest = useStudioStore
+      .getState()
+      .patchSceneObject(sceneObject.id, { position: latestPosition });
+
+    responses[1]({ ...sceneObject, position: latestPosition });
+    await latestRequest;
+    expect(useStudioStore.getState().saveState).toBe("saving");
+
+    responses[0]({ ...sceneObject, position: firstPosition });
+    await firstRequest;
+
+    expect(
+      useStudioStore.getState().workspace?.sceneObjects[0].position,
+    ).toEqual(latestPosition);
+    expect(useStudioStore.getState().saveState).toBe("saved");
+  });
+
+  it("rolls back the latest failed optimistic scene-object edit", async () => {
+    vi.mocked(apiRequest).mockRejectedValueOnce(new Error("offline"));
+
+    await useStudioStore
+      .getState()
+      .patchSceneObject(sceneObject.id, {
+        position: { x: 9, y: 9, z: 9 },
+      });
+
+    expect(
+      useStudioStore.getState().workspace?.sceneObjects[0].position,
+    ).toEqual(sceneObject.position);
+    expect(useStudioStore.getState().saveState).toBe("error");
+  });
+
+  it("does not let an old workspace mutation change newly loaded state", async () => {
+    let finishRequest: ((value: SceneObject) => void) | undefined;
+    vi.mocked(apiRequest).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishRequest = resolve as (value: SceneObject) => void;
+        }),
+    );
+    const request = useStudioStore
+      .getState()
+      .patchSceneObject(sceneObject.id, {
+        position: { x: 8, y: 8, z: 8 },
+      });
+    const replacement = {
+      ...workspace,
+      project: { ...workspace.project, id: "replacement" },
+      sceneObjects: [],
+    };
+
+    useStudioStore.getState().setWorkspace(replacement);
+    finishRequest?.(sceneObject);
+    await request;
+
+    expect(useStudioStore.getState().workspace).toEqual(replacement);
+    expect(useStudioStore.getState().saveState).toBe("saved");
+  });
 });

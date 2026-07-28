@@ -4,6 +4,10 @@ import { create } from "zustand";
 
 import { apiRequest } from "@/lib/api";
 import { valuesBeforePatch } from "@/lib/history";
+import {
+  MutationCoordinator,
+  type MutationToken,
+} from "@/lib/mutation-coordinator";
 import type {
   MediaAsset,
   ModelAsset,
@@ -84,6 +88,40 @@ type StudioState = {
   patchMedia: (id: number, patch: Partial<MediaAsset>) => Promise<void>;
   addModel: (model: ModelAsset) => void;
 };
+
+type StoreSetter = (
+  partial:
+    | Partial<StudioState>
+    | ((state: StudioState) => Partial<StudioState>),
+) => void;
+
+const mutationCoordinator = new MutationCoordinator();
+
+function resetMutationState() {
+  mutationCoordinator.reset();
+}
+
+function beginMutation(key: string, set: StoreSetter) {
+  const token = mutationCoordinator.begin(key);
+  set({ saveState: "saving" });
+  return token;
+}
+
+function isCurrentMutation(key: string, token: MutationToken) {
+  return mutationCoordinator.isCurrent(key, token);
+}
+
+function finishMutation(
+  key: string,
+  token: MutationToken,
+  succeeded: boolean,
+  set: StoreSetter,
+) {
+  const saveState = mutationCoordinator.finish(key, token, succeeded);
+  if (saveState) {
+    set({ saveState });
+  }
+}
 
 function appendHistory(
   stack: HistoryEntry[],
@@ -216,7 +254,8 @@ export const useStudioStore = create<StudioState>((set, get) => ({
   undoStack: [],
   redoStack: [],
   historyBusy: false,
-  setWorkspace: (workspace) =>
+  setWorkspace: (workspace) => {
+    resetMutationState();
     set({
       workspace,
       currentTime: 0,
@@ -230,7 +269,8 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       undoStack: [],
       redoStack: [],
       historyBusy: false,
-    }),
+    });
+  },
   selectObject: (selectedObjectId) =>
     set({ selectedObjectId, selectedClipId: null }),
   selectClip: (selectedClipId) =>
@@ -314,6 +354,8 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     if (!workspace) {
       return;
     }
+    const mutationKey = `project:${workspace.project.id}`;
+    const mutationVersion = beginMutation(mutationKey, set);
     const before = valuesBeforePatch(workspace.project, patch);
     set({
       workspace: {
@@ -327,7 +369,6 @@ export const useStudioStore = create<StudioState>((set, get) => ({
           after: patch,
       }),
       redoStack: [],
-      saveState: "saving",
     });
     try {
       const project = await apiRequest<Project>(
@@ -338,11 +379,21 @@ export const useStudioStore = create<StudioState>((set, get) => ({
         },
       );
       const latest = get().workspace;
-      if (latest) {
-        set({ workspace: { ...latest, project }, saveState: "saved" });
+      if (latest && isCurrentMutation(mutationKey, mutationVersion)) {
+        set({ workspace: { ...latest, project } });
       }
+      finishMutation(mutationKey, mutationVersion, true, set);
     } catch {
-      set({ saveState: "error" });
+      const latest = get().workspace;
+      if (latest && isCurrentMutation(mutationKey, mutationVersion)) {
+        set({
+          workspace: {
+            ...latest,
+            project: { ...latest.project, ...before },
+          },
+        });
+      }
+      finishMutation(mutationKey, mutationVersion, false, set);
     }
   },
   patchSceneObject: async (id, patch) => {
@@ -354,6 +405,8 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     if (!sceneObject) {
       return;
     }
+    const mutationKey = `scene-object:${id}`;
+    const mutationVersion = beginMutation(mutationKey, set);
     const before = valuesBeforePatch(sceneObject, patch);
     set({
       workspace: {
@@ -369,7 +422,6 @@ export const useStudioStore = create<StudioState>((set, get) => ({
         after: patch,
       }),
       redoStack: [],
-      saveState: "saving",
     });
     try {
       const sceneObject = await apiRequest<SceneObject>(`/scene-objects/${id}`, {
@@ -377,7 +429,7 @@ export const useStudioStore = create<StudioState>((set, get) => ({
         body: JSON.stringify(patch),
       });
       const latest = get().workspace;
-      if (latest) {
+      if (latest && isCurrentMutation(mutationKey, mutationVersion)) {
         set({
           workspace: {
             ...latest,
@@ -385,11 +437,22 @@ export const useStudioStore = create<StudioState>((set, get) => ({
               item.id === id ? sceneObject : item,
             ),
           },
-          saveState: "saved",
         });
       }
+      finishMutation(mutationKey, mutationVersion, true, set);
     } catch {
-      set({ saveState: "error" });
+      const latest = get().workspace;
+      if (latest && isCurrentMutation(mutationKey, mutationVersion)) {
+        set({
+          workspace: {
+            ...latest,
+            sceneObjects: latest.sceneObjects.map((item) =>
+              item.id === id ? { ...item, ...before } : item,
+            ),
+          },
+        });
+      }
+      finishMutation(mutationKey, mutationVersion, false, set);
     }
   },
   addSceneObject: async (payload) => {
@@ -470,6 +533,8 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     if (!existingClip) {
       return;
     }
+    const mutationKey = `clip:${id}`;
+    const mutationVersion = beginMutation(mutationKey, set);
     const before = valuesBeforePatch(existingClip, patch);
     const nextClip = { ...existingClip, ...patch };
     const undoStack = get().undoStack;
@@ -492,7 +557,6 @@ export const useStudioStore = create<StudioState>((set, get) => ({
         after: patch,
       }),
       redoStack: [],
-      saveState: "saving",
     });
     try {
       const clip = await apiRequest<TimelineClip>(`/clips/${id}`, {
@@ -500,7 +564,7 @@ export const useStudioStore = create<StudioState>((set, get) => ({
         body: JSON.stringify(patch),
       });
       const latest = get().workspace;
-      if (latest) {
+      if (latest && isCurrentMutation(mutationKey, mutationVersion)) {
         set({
           workspace: {
             ...latest,
@@ -512,14 +576,14 @@ export const useStudioStore = create<StudioState>((set, get) => ({
               ],
             })),
           },
-          saveState: "saved",
         });
       }
+      finishMutation(mutationKey, mutationVersion, true, set);
     } catch {
       const latest = get().workspace;
-      set({
-        workspace: latest
-          ? {
+      if (latest && isCurrentMutation(mutationKey, mutationVersion)) {
+        set({
+          workspace: {
               ...latest,
               tracks: latest.tracks.map((track) => ({
                 ...track,
@@ -528,12 +592,12 @@ export const useStudioStore = create<StudioState>((set, get) => ({
                   ...(track.id === existingClip.trackId ? [existingClip] : []),
                 ],
               })),
-            }
-          : latest,
-        undoStack,
-        redoStack,
-        saveState: "error",
-      });
+            },
+          undoStack,
+          redoStack,
+        });
+      }
+      finishMutation(mutationKey, mutationVersion, false, set);
     }
   },
   removeClip: async (id) => {
@@ -564,6 +628,8 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     if (!workspace || !existingMedia) {
       return;
     }
+    const mutationKey = `media:${id}`;
+    const mutationVersion = beginMutation(mutationKey, set);
     const before = valuesBeforePatch(existingMedia, patch);
     set({
       workspace: {
@@ -579,7 +645,6 @@ export const useStudioStore = create<StudioState>((set, get) => ({
         after: patch,
       }),
       redoStack: [],
-      saveState: "saving",
     });
     try {
       const media = await apiRequest<MediaAsset>(`/media/${id}`, {
@@ -590,7 +655,7 @@ export const useStudioStore = create<StudioState>((set, get) => ({
         }),
       });
       const latest = get().workspace;
-      if (latest) {
+      if (latest && isCurrentMutation(mutationKey, mutationVersion)) {
         set({
           workspace: {
             ...latest,
@@ -598,11 +663,22 @@ export const useStudioStore = create<StudioState>((set, get) => ({
               item.id === id ? media : item,
             ),
           },
-          saveState: "saved",
         });
       }
+      finishMutation(mutationKey, mutationVersion, true, set);
     } catch {
-      set({ saveState: "error" });
+      const latest = get().workspace;
+      if (latest && isCurrentMutation(mutationKey, mutationVersion)) {
+        set({
+          workspace: {
+            ...latest,
+            media: latest.media.map((item) =>
+              item.id === id ? { ...item, ...before } : item,
+            ),
+          },
+        });
+      }
+      finishMutation(mutationKey, mutationVersion, false, set);
     }
   },
   addModel: (model) => {

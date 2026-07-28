@@ -1,5 +1,4 @@
 from ninja import NinjaAPI
-
 from studio.api import router as studio_router
 
 api = NinjaAPI()

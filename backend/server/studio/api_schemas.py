@@ -2,7 +2,8 @@ from typing import Any
 from uuid import UUID
 
 from ninja import Schema
-from pydantic import ConfigDict, Field as SchemaField
+from pydantic import ConfigDict
+from pydantic import Field as SchemaField
 
 
 class StrictSchema(Schema):

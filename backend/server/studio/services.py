@@ -306,16 +306,26 @@ def replace_bolshoi_facade(project):
         "wing": asset("Side Wing", "box", [5.5, 5.2, 1.2], "#e7ddcc", 0.92),
         "upper": asset("Upper Facade", "box", [14.8, 2.1, 1.2], cream, 0.9),
         "cornice": asset("Entablature", "box", [16.5, 0.55, 1.9], pale_stone, 0.72),
-        "pediment": asset("Triangular Pediment", "pediment", [15.2, 3.0, 1.25], cream, 0.82),
-        "column": asset("Portico Column", "cylinder", [0.38, 5.8, 0.38], pale_stone, 0.68),
+        "pediment": asset(
+            "Triangular Pediment", "pediment", [15.2, 3.0, 1.25], cream, 0.82
+        ),
+        "column": asset(
+            "Portico Column", "cylinder", [0.38, 5.8, 0.38], pale_stone, 0.68
+        ),
         "capital": asset("Column Capital", "box", [1.0, 0.3, 1.0], pale_stone, 0.65),
         "door": asset("Entrance Door", "box", [1.35, 3.0, 0.18], shadow, 0.88),
         "window": asset("Facade Window", "box", [1.05, 1.55, 0.16], "#91a6ad", 0.4),
         "step": asset("Front Step", "box", [17, 0.3, 2.0], "#d8d0c5", 0.9),
         "relief": asset("Pediment Relief", "box", [7.5, 0.55, 0.12], "#d2c5b2", 0.75),
-        "bronze_box": asset("Quadriga Body", "box", [1.15, 0.55, 0.55], bronze, 0.5, 0.15),
-        "bronze_sphere": asset("Quadriga Head", "sphere", [0.4, 0.4, 0.4], bronze, 0.45, 0.2),
-        "bronze_column": asset("Apollo Figure", "cylinder", [0.24, 1.25, 0.24], bronze, 0.45, 0.2),
+        "bronze_box": asset(
+            "Quadriga Body", "box", [1.15, 0.55, 0.55], bronze, 0.5, 0.15
+        ),
+        "bronze_sphere": asset(
+            "Quadriga Head", "sphere", [0.4, 0.4, 0.4], bronze, 0.45, 0.2
+        ),
+        "bronze_column": asset(
+            "Apollo Figure", "cylinder", [0.24, 1.25, 0.24], bronze, 0.45, 0.2
+        ),
     }
 
     def place(name, model, position, scale=(1, 1, 1)):
@@ -359,7 +369,12 @@ def replace_bolshoi_facade(project):
     for index, x_position in enumerate((-10.7, -8.7, 8.7, 10.7), start=1):
         place(f"Ground Window {index}", assets["window"], (x_position, 2.5, -7.42))
     for index, x_position in enumerate((-5.4, -3.6, -1.8, 0, 1.8, 3.6, 5.4), start=1):
-        place(f"Upper Window {index}", assets["window"], (x_position, 7.25, -7.58), (0.72, 0.68, 1))
+        place(
+            f"Upper Window {index}",
+            assets["window"],
+            (x_position, 7.25, -7.58),
+            (0.72, 0.68, 1),
+        )
 
     for index in range(4):
         place(
@@ -371,7 +386,11 @@ def replace_bolshoi_facade(project):
 
     for index, x_position in enumerate((-2.1, -0.7, 0.7, 2.1), start=1):
         place(f"Quadriga Horse {index}", assets["bronze_box"], (x_position, 10.0, -7.3))
-        place(f"Quadriga Horse Head {index}", assets["bronze_sphere"], (x_position, 10.55, -7.15))
+        place(
+            f"Quadriga Horse Head {index}",
+            assets["bronze_sphere"],
+            (x_position, 10.55, -7.15),
+        )
     place("Apollo", assets["bronze_column"], (0, 10.65, -7.55))
     place("Apollo Head", assets["bronze_sphere"], (0, 11.35, -7.55), (0.7, 0.7, 0.7))
 
@@ -560,7 +579,9 @@ def create_bolshoi_theatre_project():
         config={"size": [3.7, 4.0, 0.55], "color": "#120608", "roughness": 1},
     )
 
-    scene_objects = {scene_object.name: scene_object for scene_object in project.scene_objects.all()}
+    scene_objects = {
+        scene_object.name: scene_object for scene_object in project.scene_objects.all()
+    }
     scene_updates = [
         (
             "Stage Floor",
@@ -642,9 +663,27 @@ def create_bolshoi_theatre_project():
         ("Right Balcony", balcony_box, [8.95, 4.3, -7.45], [0, 0, 0], [1, 1, 1]),
         ("Cornice", cornice, [0, 6.75, -7.95], [0, 0, 0], [1, 1, 1]),
         ("Entrance Void", entrance_void, [0, 2.0, -7.28], [0, 0, 0], [1, 1, 1]),
-        ("Left Lantern", projection_sphere, [-9.55, 1.85, -5.9], [0, 0, 0], [0.25, 0.25, 0.25]),
-        ("Right Lantern", projection_sphere, [9.55, 1.85, -5.9], [0, 0, 0], [0.25, 0.25, 0.25]),
-        ("Center Chandelier", projection_sphere, [0, 5.45, -5.6], [0, 0, 0], [0.8, 0.8, 0.8]),
+        (
+            "Left Lantern",
+            projection_sphere,
+            [-9.55, 1.85, -5.9],
+            [0, 0, 0],
+            [0.25, 0.25, 0.25],
+        ),
+        (
+            "Right Lantern",
+            projection_sphere,
+            [9.55, 1.85, -5.9],
+            [0, 0, 0],
+            [0.25, 0.25, 0.25],
+        ),
+        (
+            "Center Chandelier",
+            projection_sphere,
+            [0, 5.45, -5.6],
+            [0, 0, 0],
+            [0.8, 0.8, 0.8],
+        ),
     ]
     for name, asset, position, rotation, scale in scene_layout:
         SceneObject.objects.create(
@@ -711,4 +750,3 @@ def create_bolshoi_theatre_project():
         scene_objects[removed_name].delete()
 
     return project
-

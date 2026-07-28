@@ -9,7 +9,6 @@ from ninja import File, Router
 from ninja.errors import HttpError
 from ninja.files import UploadedFile
 
-from studio.demo_services import ensure_demo_project
 from studio.api_schemas import (
     ClipCreate,
     ClipPatch,
@@ -26,6 +25,7 @@ from studio.api_schemas import (
     TrackCreate,
     TrackPatch,
 )
+from studio.demo_services import ensure_demo_project
 from studio.models import (
     EquipmentTemplate,
     MediaAsset,

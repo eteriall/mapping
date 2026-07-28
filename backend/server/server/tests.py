@@ -1,3 +1,5 @@
+import os
+
 from django.conf import settings
 from django.test import SimpleTestCase
 
@@ -25,12 +27,15 @@ class StaticConfigurationTests(SimpleTestCase):
         )
         self.assertGreater(whitenoise_index, security_index)
 
-    def test_staticfiles_storage_uses_whitenoise_backend(self):
-        """Ensures staticfiles storage backend is WhiteNoise compressed manifest."""
+    def test_staticfiles_storage_uses_expected_whitenoise_backend(self):
+        """Ensures staticfiles storage matches the current debug mode."""
         backend = settings.STORAGES["staticfiles"]["BACKEND"]
-        self.assertEqual(
-            backend, "whitenoise.storage.CompressedManifestStaticFilesStorage"
+        expected_backend = (
+            "whitenoise.storage.CompressedStaticFilesStorage"
+            if os.environ["DJANGO_DEBUG"].lower() == "true"
+            else "whitenoise.storage.CompressedManifestStaticFilesStorage"
         )
+        self.assertEqual(backend, expected_backend)
 
 
 class ContentSecurityPolicyConfigurationTests(SimpleTestCase):

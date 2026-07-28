@@ -1,0 +1,62 @@
+services:
+  mapping-backend:
+    restart: unless-stopped
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: mapping-backend
+    env_file:
+      - .env
+    environment:
+      DB_HOST: mapping-postgres
+      DB_PORT: 5432
+    volumes:
+      - ./backend/server:/app/server
+    depends_on:
+      mapping-postgres:
+        condition: service_healthy
+
+  mapping-frontend:
+    restart: unless-stopped
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: mapping-frontend
+    depends_on:
+      - mapping-backend
+
+  mapping-proxy:
+    restart: unless-stopped
+    build:
+      context: ./proxy
+      dockerfile: Dockerfile
+    container_name: mapping-proxy
+    networks:
+      - default
+      - proxy
+    depends_on:
+      - mapping-backend
+      - mapping-frontend
+
+  mapping-postgres:
+    restart: unless-stopped
+    image: postgres:16-alpine
+    container_name: mapping-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+
+networks:
+  proxy:
+    external: true

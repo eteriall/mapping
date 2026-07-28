@@ -2,7 +2,7 @@ Django==6.0.7
 django-unfold
 django-csp
 django-ninja
-gunicorn==23.0.0
+gunicorn==26.0.0
 psycopg[binary]==3.2.13
 whitenoise==6.9.0
 yt-dlp[default]==2026.7.4

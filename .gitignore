@@ -29,3 +29,6 @@ pnpm-debug.log*
 db.sqlite3
 
 *.log
+
+# Local source recording used to generate the README demo.
+/demo.mov

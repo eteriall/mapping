@@ -4,6 +4,8 @@ Mapping is an open-source, browser-based projection-mapping studio. It combines
 a Next.js editor with a Django API for arranging projectors, lights, cameras,
 media, 3D models, and timeline clips in a shared stage workspace.
 
+![Mapping projection studio demo](docs/assets/demo.gif)
+
 ## Features
 
 - Interactive 3D stage editor built with React Three Fiber

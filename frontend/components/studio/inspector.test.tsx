@@ -128,6 +128,10 @@ it.each(["projector", "light"] as const)(
     expect(screen.queryByText("Scale")).toBeNull();
     expect(screen.getByText("Position")).toBeTruthy();
     expect(screen.getByText("Rotation")).toBeTruthy();
+    if (category === "projector") {
+      expect(screen.getByLabelText("Volume brightness")).toBeTruthy();
+      expect(screen.getByLabelText("Volume falloff")).toBeTruthy();
+    }
   },
 );
 

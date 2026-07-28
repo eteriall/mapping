@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import {
   ToggleGroup,
@@ -32,6 +33,10 @@ import {
   resolveLightSettings,
 } from "@/lib/lights";
 import { useStudioStore } from "@/lib/studio-store";
+import {
+  DEFAULT_VOLUME_FALLOFF,
+  DEFAULT_VOLUME_INTENSITY,
+} from "@/lib/stage-rendering";
 import type { EquipmentTemplate, SceneObject, Vec3 } from "@/lib/types";
 
 export function Inspector() {
@@ -358,6 +363,68 @@ export function Inspector() {
                   Number(template.specs.lumens)
                 }
               />
+              <Field>
+                <div className="flex items-center justify-between gap-3">
+                  <FieldLabel>Volume brightness</FieldLabel>
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {(
+                      Number(sceneObject.properties.volumeIntensity) ||
+                      DEFAULT_VOLUME_INTENSITY
+                    ).toFixed(2)}
+                  </span>
+                </div>
+                <Slider
+                  aria-label="Volume brightness"
+                  max={0.8}
+                  min={0.05}
+                  onValueCommitted={(value) =>
+                    void patchSceneObject(sceneObject.id, {
+                      properties: {
+                        ...sceneObject.properties,
+                        volumeIntensity: Array.isArray(value)
+                          ? value[0]
+                          : value,
+                      },
+                    })
+                  }
+                  step={0.05}
+                  value={[
+                    Number(sceneObject.properties.volumeIntensity) ||
+                      DEFAULT_VOLUME_INTENSITY,
+                  ]}
+                />
+              </Field>
+              <Field>
+                <div className="flex items-center justify-between gap-3">
+                  <FieldLabel>Volume falloff</FieldLabel>
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {(
+                      Number(sceneObject.properties.volumeFalloff) ||
+                      DEFAULT_VOLUME_FALLOFF
+                    ).toFixed(1)}
+                  </span>
+                </div>
+                <Slider
+                  aria-label="Volume falloff"
+                  max={8}
+                  min={0.5}
+                  onValueCommitted={(value) =>
+                    void patchSceneObject(sceneObject.id, {
+                      properties: {
+                        ...sceneObject.properties,
+                        volumeFalloff: Array.isArray(value)
+                          ? value[0]
+                          : value,
+                      },
+                    })
+                  }
+                  step={0.25}
+                  value={[
+                    Number(sceneObject.properties.volumeFalloff) ||
+                      DEFAULT_VOLUME_FALLOFF,
+                  ]}
+                />
+              </Field>
             </FieldGroup>
             <p className="text-xs text-muted-foreground">
               {String((template.specs.resolution as number[])[0])} ×{" "}

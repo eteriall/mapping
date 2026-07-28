@@ -12,6 +12,7 @@ import {
 } from "@react-three/drei";
 import {
   type ComponentRef,
+  type RefObject,
   Suspense,
   useCallback,
   useEffect,
@@ -33,17 +34,26 @@ import {
   releaseVideoElement,
 } from "@/lib/media-playback";
 import {
+  frustumSegmentsFromCorners,
   lightConeRadius,
   projectionCookieSize,
   projectionFrustumSegments,
   projectionWidthToFov,
+  PROJECTOR_COOKIE_OVERSCAN,
   RECTANGULAR_PROJECTOR_PENUMBRA,
 } from "@/lib/stage-bounds";
-import { buildProjectedSurfaceGeometry } from "@/lib/projection-mesh";
 import {
+  buildProjectedSurfaceGeometry,
+  buildProjectionVolumeGeometry,
+} from "@/lib/projection-mesh";
+import {
+  DEFAULT_VOLUME_FALLOFF,
+  DEFAULT_VOLUME_INTENSITY,
+  installMappedSpotlightMask,
   PROJECTION_CONTOUR_COLOR,
   PROJECTION_CONTOUR_WIDTH,
   STAGE_SHADOW_MAP,
+  VOLUME_COLOR_SAMPLE_GRID,
 } from "@/lib/stage-rendering";
 import { activeLayers } from "@/lib/timeline";
 import { useStudioStore } from "@/lib/studio-store";
@@ -69,6 +79,8 @@ const generatorVertexShader = `
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
+
+installMappedSpotlightMask();
 
 const generatorFragmentShader = `
   precision highp float;
@@ -194,7 +206,10 @@ function ProjectionContent({
     [],
   );
   const geometry = useMemo(() => {
-    const [width, height] = projectionCookieSize(aspect);
+    const [width, height] = projectionCookieSize(
+      aspect,
+      PROJECTOR_COOKIE_OVERSCAN,
+    );
     return new THREE.PlaneGeometry(width, height);
   }, [aspect]);
   const meshes = useRef(new Map<number, THREE.Mesh>());
@@ -493,6 +508,7 @@ function ProjectorFixture({
   showBounds,
   showProjectionContour,
   showProjectedSurfaces,
+  showVolumetricLight,
   blackout,
 }: {
   sceneObject: SceneObject;
@@ -502,6 +518,7 @@ function ProjectorFixture({
   showBounds: boolean;
   showProjectionContour: boolean;
   showProjectedSurfaces: boolean;
+  showVolumetricLight: boolean;
   blackout: boolean;
 }) {
   const [texture, setTexture] = useState<THREE.Texture | null>(null);
@@ -523,6 +540,9 @@ function ProjectorFixture({
     referenceDistance,
   );
   const diagonalHalfAngle = (fov.diagonal * Math.PI) / 360;
+  const overscannedHalfAngle = Math.atan(
+    Math.tan(diagonalHalfAngle) * PROJECTOR_COOKIE_OVERSCAN,
+  );
   const near = Number(template.specs.near) || 0.2;
   const far = Number(template.specs.far) || 30;
   useEffect(() => {
@@ -562,7 +582,7 @@ function ProjectorFixture({
         castShadow
         target={target}
         map={texture ?? undefined}
-        angle={diagonalHalfAngle}
+        angle={overscannedHalfAngle}
         penumbra={RECTANGULAR_PROJECTOR_PENUMBRA}
         power={
           blackout
@@ -579,6 +599,7 @@ function ProjectorFixture({
           aspect={aspect}
           far={far}
           near={near}
+          stopAtSurfaces={showProjectedSurfaces || showProjectionContour}
           verticalFov={fov.vertical}
         />
       ) : null}
@@ -587,6 +608,7 @@ function ProjectorFixture({
           aspect={aspect}
           far={far}
           near={near}
+          projectorRef={spotRef}
           showContour={showProjectionContour}
           showSurface={showProjectedSurfaces}
           verticalFov={fov.vertical}
@@ -599,7 +621,267 @@ function ProjectorFixture({
         projectorId={sceneObject.id}
         tracks={tracks}
       />
+      {showVolumetricLight ? (
+        <ProjectorVolume
+          aspect={aspect}
+          far={far}
+          intensity={
+            Number(sceneObject.properties.volumeIntensity) ||
+            DEFAULT_VOLUME_INTENSITY
+          }
+          near={near}
+          projectionTexture={texture}
+          projectorRef={spotRef}
+          volumeFalloff={
+            Number(sceneObject.properties.volumeFalloff) ||
+            DEFAULT_VOLUME_FALLOFF
+          }
+          verticalFov={fov.vertical}
+        />
+      ) : null}
     </>
+  );
+}
+
+function ProjectorVolume({
+  aspect,
+  far,
+  intensity,
+  near,
+  projectionTexture,
+  projectorRef,
+  volumeFalloff,
+  verticalFov,
+}: {
+  aspect: number;
+  far: number;
+  intensity: number;
+  near: number;
+  projectionTexture: THREE.Texture | null;
+  projectorRef: RefObject<THREE.SpotLight | null>;
+  volumeFalloff: number;
+  verticalFov: number;
+}) {
+  const groupRef = useRef<THREE.Group>(null);
+  const meshRef = useRef<THREE.Mesh>(null);
+  const { gl, scene } = useThree();
+  const frame = useRef(0);
+  const signature = useRef("");
+  const geometry = useMemo(() => new THREE.BufferGeometry(), []);
+  const averageTarget = useFBO(1, 1, {
+    depthBuffer: false,
+    magFilter: THREE.LinearFilter,
+    minFilter: THREE.LinearFilter,
+    stencilBuffer: false,
+  });
+  const averageScene = useMemo(() => new THREE.Scene(), []);
+  const averageCamera = useMemo(
+    () => new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1),
+    [],
+  );
+  const averageGeometry = useMemo(() => new THREE.PlaneGeometry(2, 2), []);
+  const averageMaterial = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        depthTest: false,
+        depthWrite: false,
+        fragmentShader: `
+          uniform sampler2D uProjectionTexture;
+          void main() {
+            vec3 averageColor = vec3(0.0);
+            for (int y = 0; y < ${VOLUME_COLOR_SAMPLE_GRID}; y++) {
+              for (int x = 0; x < ${VOLUME_COLOR_SAMPLE_GRID}; x++) {
+                vec2 sampleUv = (
+                  vec2(float(x), float(y)) + 0.5
+                ) / ${VOLUME_COLOR_SAMPLE_GRID}.0;
+                averageColor += texture2D(
+                  uProjectionTexture,
+                  sampleUv
+                ).rgb;
+              }
+            }
+            averageColor /= ${VOLUME_COLOR_SAMPLE_GRID ** 2}.0;
+            gl_FragColor = vec4(averageColor, 1.0);
+          }
+        `,
+        uniforms: {
+          uProjectionTexture: { value: projectionTexture },
+        },
+        vertexShader: `
+          void main() {
+            gl_Position = vec4(position.xy, 0.0, 1.0);
+          }
+        `,
+      }),
+    [projectionTexture],
+  );
+  const material = useMemo(() => {
+    const value = new THREE.ShaderMaterial({
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      fragmentShader: `
+          varying float vBeamProgress;
+          uniform sampler2D uAverageColor;
+          uniform float uVolumeFalloff;
+          uniform float uVolumeIntensity;
+          void main() {
+            vec3 averageColor = texture2D(
+              uAverageColor,
+              vec2(0.5)
+            ).rgb;
+            float fade = pow(
+              max(0.0, 1.0 - vBeamProgress),
+              uVolumeFalloff
+            );
+            gl_FragColor = vec4(
+              averageColor,
+              uVolumeIntensity * fade
+            );
+          }
+        `,
+      side: THREE.DoubleSide,
+      transparent: true,
+      uniforms: {
+        uAverageColor: { value: averageTarget.texture },
+        uVolumeFalloff: { value: volumeFalloff },
+        uVolumeIntensity: { value: intensity },
+      },
+      vertexShader: `
+          attribute float beamProgress;
+          varying float vBeamProgress;
+          void main() {
+            vBeamProgress = beamProgress;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+    });
+    value.toneMapped = false;
+    return value;
+  }, [averageTarget.texture, intensity, volumeFalloff]);
+
+  useEffect(() => {
+    const averageMesh = new THREE.Mesh(averageGeometry, averageMaterial);
+    averageScene.add(averageMesh);
+    return () => {
+      averageScene.remove(averageMesh);
+      averageMaterial.dispose();
+    };
+  }, [averageGeometry, averageMaterial, averageScene]);
+
+  useEffect(
+    () => () => {
+      averageGeometry.dispose();
+      averageTarget.dispose();
+      geometry.dispose();
+    },
+    [averageGeometry, averageTarget, geometry],
+  );
+  useEffect(() => () => material.dispose(), [material]);
+
+  useFrame(() => {
+    if (projectionTexture) {
+      const previousTarget = gl.getRenderTarget();
+      gl.setRenderTarget(averageTarget);
+      gl.render(averageScene, averageCamera);
+      gl.setRenderTarget(previousTarget);
+    }
+    frame.current += 1;
+    const group = groupRef.current;
+    const mesh = meshRef.current;
+    const projector = projectorRef.current;
+    if (frame.current % 15 !== 0 || !group || !mesh || !projector) {
+      return;
+    }
+    projector.updateWorldMatrix(true, false);
+    group.updateWorldMatrix(true, false);
+    const receivers: THREE.Mesh[] = [];
+    scene.traverse((object) => {
+      if (!(object instanceof THREE.Mesh) || !object.geometry) {
+        return;
+      }
+      let parent: THREE.Object3D | null = object;
+      while (parent) {
+        if (parent.userData.stageHelper) {
+          return;
+        }
+        if (parent.userData.sceneObjectType === "model") {
+          object.updateWorldMatrix(true, false);
+          receivers.push(object);
+          return;
+        }
+        parent = parent.parent;
+      }
+    });
+    const nextSignature = [
+      group.matrixWorld.elements.join(","),
+      ...receivers.map(
+        (receiver) =>
+          `${receiver.uuid}:${receiver.matrixWorld.elements.join(",")}`,
+      ),
+    ].join("|");
+    if (signature.current === nextSignature) {
+      return;
+    }
+    signature.current = nextSignature;
+    const origin = group.getWorldPosition(new THREE.Vector3());
+    const halfHeight = Math.tan((verticalFov * Math.PI) / 360);
+    const columns = 17;
+    const rows = 11;
+    const nearPoints: THREE.Vector3[] = [];
+    const farPoints: THREE.Vector3[] = [];
+    const raycaster = new THREE.Raycaster();
+    for (let row = 0; row < rows; row += 1) {
+      const vertical = 1 - (row / (rows - 1)) * 2;
+      for (let column = 0; column < columns; column += 1) {
+        const horizontal = (column / (columns - 1)) * 2 - 1;
+        const cameraDirection = new THREE.Vector3(
+          horizontal * halfHeight * aspect,
+          vertical * halfHeight,
+          -1,
+        ).normalize();
+        const worldDirection = cameraDirection
+          .clone()
+          .transformDirection(group.matrixWorld);
+        const farDistance = far / -cameraDirection.z;
+        raycaster.set(origin, worldDirection);
+        raycaster.far = farDistance;
+        const hit = raycaster
+          .intersectObjects(receivers, false)
+          .find((intersection) => intersection.distance > near);
+        nearPoints.push(
+          cameraDirection
+            .clone()
+            .multiplyScalar(near / -cameraDirection.z),
+        );
+        farPoints.push(
+          cameraDirection
+            .clone()
+            .multiplyScalar(
+              Math.min(hit?.distance ?? farDistance, farDistance),
+            ),
+        );
+      }
+    }
+    const nextGeometry = buildProjectionVolumeGeometry(
+      nearPoints,
+      farPoints,
+      columns,
+      rows,
+    );
+    mesh.geometry.dispose();
+    mesh.geometry = nextGeometry;
+  });
+
+  return (
+    <group ref={groupRef} userData={{ stageHelper: true }}>
+      <mesh
+        ref={meshRef}
+        geometry={geometry}
+        material={material}
+        raycast={() => undefined}
+        renderOrder={7}
+      />
+    </group>
   );
 }
 
@@ -607,6 +889,7 @@ function ProjectedSurfaceMeshes({
   aspect,
   far,
   near,
+  projectorRef,
   showContour,
   showSurface,
   verticalFov,
@@ -614,11 +897,11 @@ function ProjectedSurfaceMeshes({
   aspect: number;
   far: number;
   near: number;
+  projectorRef: RefObject<THREE.SpotLight | null>;
   showContour: boolean;
   showSurface: boolean;
   verticalFov: number;
 }) {
-  const anchorRef = useRef<THREE.Group>(null);
   const { scene } = useThree();
   const frame = useRef(0);
   const entries = useRef(
@@ -681,12 +964,15 @@ function ProjectedSurfaceMeshes({
 
   useFrame(() => {
     frame.current += 1;
-    const anchor = anchorRef.current;
-    if (frame.current % 10 !== 0 || !anchor) {
+    const projector = projectorRef.current;
+    if (frame.current % 10 !== 0 || !projector) {
       return;
     }
-    anchor.updateWorldMatrix(true, false);
-    const projectorSignature = anchor.matrixWorld.elements.join(",");
+    projector.updateWorldMatrix(true, false);
+    projector.target.updateWorldMatrix(true, false);
+    projector.shadow.updateMatrices(projector);
+    const projectorMatrix = projector.shadow.camera.matrixWorld;
+    const projectorSignature = projectorMatrix.elements.join(",");
     const receivers: THREE.Mesh[] = [];
     scene.traverse((object) => {
       if (!(object instanceof THREE.Mesh) || !object.geometry) {
@@ -719,7 +1005,7 @@ function ProjectedSurfaceMeshes({
       }
       const geometry = buildProjectedSurfaceGeometry(
         source,
-        anchor.matrixWorld,
+        projectorMatrix,
         { aspect, far, near, verticalFov },
       );
       const surface = new THREE.Mesh(geometry, surfaceMaterial);
@@ -756,7 +1042,7 @@ function ProjectedSurfaceMeshes({
     }
   });
 
-  return <group ref={anchorRef} userData={{ stageHelper: true }} />;
+  return null;
 }
 
 function LightFixture({
@@ -839,37 +1125,125 @@ function ProjectorBounds({
   aspect,
   far,
   near,
+  stopAtSurfaces,
   verticalFov,
 }: {
   aspect: number;
   far: number;
   near: number;
+  stopAtSurfaces: boolean;
   verticalFov: number;
 }) {
-  const geometry = useMemo(() => {
-    const value = new THREE.BufferGeometry();
-    value.setAttribute(
+  const groupRef = useRef<THREE.Group>(null);
+  const { scene } = useThree();
+  const frame = useRef(0);
+  const geometry = useMemo(() => new THREE.BufferGeometry(), []);
+  const staticSegments = useMemo(
+    () => projectionFrustumSegments({ aspect, far, near, verticalFov }),
+    [aspect, far, near, verticalFov],
+  );
+
+  useEffect(() => {
+    geometry.setAttribute(
       "position",
-      new THREE.Float32BufferAttribute(
-        projectionFrustumSegments({ aspect, far, near, verticalFov }),
-        3,
-      ),
+      new THREE.Float32BufferAttribute(staticSegments, 3),
     );
-    return value;
-  }, [aspect, far, near, verticalFov]);
+    geometry.computeBoundingSphere();
+  }, [geometry, staticSegments]);
 
   useEffect(() => () => geometry.dispose(), [geometry]);
 
+  useFrame(() => {
+    frame.current += 1;
+    const group = groupRef.current;
+    if (!stopAtSurfaces || frame.current % 10 !== 0 || !group) {
+      return;
+    }
+    group.updateWorldMatrix(true, false);
+    const origin = group.getWorldPosition(new THREE.Vector3());
+    const halfHeight = Math.tan((verticalFov * Math.PI) / 360);
+    const cornerSigns: [number, number][] = [
+      [-1, 1],
+      [1, 1],
+      [1, -1],
+      [-1, -1],
+    ];
+    const raycaster = new THREE.Raycaster();
+    const nearCorners: [number, number, number][] = [];
+    const farCorners: [number, number, number][] = [];
+    for (const [horizontal, vertical] of cornerSigns) {
+      const cameraDirection = new THREE.Vector3(
+        horizontal * halfHeight * aspect,
+        vertical * halfHeight,
+        -1,
+      ).normalize();
+      const worldDirection = cameraDirection
+        .clone()
+        .transformDirection(group.matrixWorld);
+      const farDistance = far / -cameraDirection.z;
+      raycaster.set(origin, worldDirection);
+      raycaster.far = farDistance;
+      const hit = raycaster
+        .intersectObjects(scene.children, true)
+        .find((intersection) => {
+          let parent: THREE.Object3D | null = intersection.object;
+          while (parent) {
+            if (parent.userData.stageHelper) {
+              return false;
+            }
+            if (parent.userData.sceneObjectType === "model") {
+              return true;
+            }
+            parent = parent.parent;
+          }
+          return false;
+        });
+      const nearPoint = cameraDirection
+        .clone()
+        .multiplyScalar(near / -cameraDirection.z);
+      const farPoint = cameraDirection
+        .clone()
+        .multiplyScalar(
+          Math.min(hit?.distance ?? farDistance, farDistance),
+        );
+      nearCorners.push([nearPoint.x, nearPoint.y, nearPoint.z]);
+      farCorners.push([farPoint.x, farPoint.y, farPoint.z]);
+    }
+    geometry.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(
+        frustumSegmentsFromCorners(
+          nearCorners as [
+            [number, number, number],
+            [number, number, number],
+            [number, number, number],
+            [number, number, number],
+          ],
+          farCorners as [
+            [number, number, number],
+            [number, number, number],
+            [number, number, number],
+            [number, number, number],
+          ],
+        ),
+        3,
+      ),
+    );
+    geometry.computeBoundingSphere();
+  });
+
   return (
-    <lineSegments geometry={geometry} renderOrder={10}>
-      <lineBasicMaterial
-        color="#22d3ee"
-        depthTest={false}
-        opacity={0.8}
-        toneMapped={false}
-        transparent
-      />
-    </lineSegments>
+    <group ref={groupRef} userData={{ stageHelper: true }}>
+      <lineSegments geometry={geometry} renderOrder={10}>
+        <lineBasicMaterial
+          color="#22d3ee"
+          depthTest={false}
+          opacity={0.8}
+          toneMapped={false}
+          transparent
+        />
+      </lineSegments>
+    </group>
   );
 }
 
@@ -963,6 +1337,7 @@ function SceneNode({
   showProjectionContour,
   showProjectorBounds,
   showProjectedSurfaces,
+  showVolumetricLight,
   blackout,
 }: {
   sceneObject: SceneObject;
@@ -974,6 +1349,7 @@ function SceneNode({
   showProjectionContour: boolean;
   showProjectorBounds: boolean;
   showProjectedSurfaces: boolean;
+  showVolumetricLight: boolean;
   blackout: boolean;
 }) {
   const [group, setGroup] = useState<THREE.Group | null>(null);
@@ -1046,6 +1422,7 @@ function SceneNode({
             showBounds={showProjectorBounds}
             showProjectionContour={showProjectionContour}
             showProjectedSurfaces={showProjectedSurfaces}
+            showVolumetricLight={showVolumetricLight}
             template={equipment}
             tracks={tracks}
           />
@@ -1091,6 +1468,7 @@ function StageObjects({
   showProjectionContour,
   showProjectorBounds,
   showProjectedSurfaces,
+  showVolumetricLight,
   tracks,
 }: {
   blackout: boolean;
@@ -1102,6 +1480,7 @@ function StageObjects({
   showProjectionContour: boolean;
   showProjectorBounds: boolean;
   showProjectedSurfaces: boolean;
+  showVolumetricLight: boolean;
   tracks: TimelineTrack[];
 }) {
   return sceneObjects.map((sceneObject) => (
@@ -1118,6 +1497,7 @@ function StageObjects({
       showProjectionContour={showProjectionContour}
       showProjectorBounds={showProjectorBounds}
       showProjectedSurfaces={showProjectedSurfaces}
+      showVolumetricLight={showVolumetricLight}
       tracks={tracks}
     />
   ));
@@ -1228,6 +1608,7 @@ export function StageCanvas({
   showProjectionContour = false,
   showProjectorBounds = false,
   showProjectedSurfaces = false,
+  showVolumetricLight = false,
 }: {
   onFpsChange: (fps: number) => void;
   showGrid?: boolean;
@@ -1235,6 +1616,7 @@ export function StageCanvas({
   showProjectionContour?: boolean;
   showProjectorBounds?: boolean;
   showProjectedSurfaces?: boolean;
+  showVolumetricLight?: boolean;
 }) {
   const workspace = useStudioStore((state) => state.workspace);
   const selectObject = useStudioStore((state) => state.selectObject);
@@ -1280,6 +1662,7 @@ export function StageCanvas({
           showProjectionContour={showProjectionContour}
           showProjectorBounds={showProjectorBounds}
           showProjectedSurfaces={showProjectedSurfaces}
+          showVolumetricLight={showVolumetricLight}
           tracks={workspace.tracks}
         />
       </Suspense>

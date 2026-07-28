@@ -22,6 +22,7 @@ vi.mock("next/dynamic", () => ({
       showProjectionContour: boolean;
       showProjectorBounds: boolean;
       showProjectedSurfaces: boolean;
+      showVolumetricLight: boolean;
     }) => (
       <div
         data-grid={String(props.showGrid)}
@@ -29,6 +30,7 @@ vi.mock("next/dynamic", () => ({
         data-projection-contour={String(props.showProjectionContour)}
         data-projector-bounds={String(props.showProjectorBounds)}
         data-projected-surfaces={String(props.showProjectedSurfaces)}
+        data-volumetric-light={String(props.showVolumetricLight)}
         data-testid="stage-canvas"
       >
         Stage canvas
@@ -171,6 +173,7 @@ it("toggles projector bounds, projected surfaces, and light bounds independently
   expect(stageCanvas.getAttribute("data-light-bounds")).toBe("false");
   expect(stageCanvas.getAttribute("data-projection-contour")).toBe("false");
   expect(stageCanvas.getAttribute("data-projected-surfaces")).toBe("false");
+  expect(stageCanvas.getAttribute("data-volumetric-light")).toBe("true");
 
   fireEvent.click(
     screen.getByRole("switch", { name: "Projector bounds" }),
@@ -193,6 +196,11 @@ it("toggles projector bounds, projected surfaces, and light bounds independently
 
   fireEvent.click(screen.getByRole("switch", { name: "Grid" }));
   expect(stageCanvas.getAttribute("data-grid")).toBe("false");
+
+  fireEvent.click(
+    screen.getByRole("switch", { name: "Volumetric light" }),
+  );
+  expect(stageCanvas.getAttribute("data-volumetric-light")).toBe("false");
 
   fireEvent.click(screen.getByRole("switch", { name: "Light bounds" }));
   expect(stageCanvas.getAttribute("data-projector-bounds")).toBe("true");

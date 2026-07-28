@@ -87,6 +87,7 @@ export function StudioEditor({ projectId }: { projectId: string }) {
   const [showProjectionContour, setShowProjectionContour] = useState(false);
   const [showProjectorBounds, setShowProjectorBounds] = useState(false);
   const [showProjectedSurfaces, setShowProjectedSurfaces] = useState(false);
+  const [showVolumetricLight, setShowVolumetricLight] = useState(true);
   const workspace = useStudioStore((state) => state.workspace);
   const setWorkspace = useStudioStore((state) => state.setWorkspace);
   const currentTime = useStudioStore((state) => state.currentTime);
@@ -341,6 +342,7 @@ export function StudioEditor({ projectId }: { projectId: string }) {
                   showProjectionContour={showProjectionContour}
                   showProjectorBounds={showProjectorBounds}
                   showProjectedSurfaces={showProjectedSurfaces}
+                  showVolumetricLight={showVolumetricLight}
                 />
                 <Badge
                   aria-label={`Viewport frame rate: ${viewportFps} FPS`}
@@ -439,6 +441,17 @@ export function StudioEditor({ projectId }: { projectId: string }) {
                     />
                     <Label htmlFor="show-projection-contour">
                       Projection contour
+                    </Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={showVolumetricLight}
+                      id="show-volumetric-light"
+                      onCheckedChange={setShowVolumetricLight}
+                      size="sm"
+                    />
+                    <Label htmlFor="show-volumetric-light">
+                      Volumetric light
                     </Label>
                   </div>
                   <div className="flex items-center gap-2">

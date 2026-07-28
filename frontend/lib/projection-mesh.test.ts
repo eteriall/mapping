@@ -3,7 +3,7 @@ import * as THREE from "three";
 
 import {
   buildProjectedSurfaceGeometry,
-  PROJECTED_SURFACE_EDGE_SCALE,
+  buildProjectionVolumeGeometry,
 } from "@/lib/projection-mesh";
 
 describe("projected surface mesh", () => {
@@ -50,8 +50,26 @@ describe("projected surface mesh", () => {
     expect(geometry.getAttribute("position").count).toBe(0);
   });
 
-  it("includes the sampled projector cookie edge footprint", () => {
-    expect(PROJECTED_SURFACE_EDGE_SCALE).toBeGreaterThan(1);
-    expect(PROJECTED_SURFACE_EDGE_SCALE).toBeLessThan(1.02);
+  it("builds a closed-sided volume ending at sampled hit points", () => {
+    const nearPoints = [
+      new THREE.Vector3(-1, 1, -1),
+      new THREE.Vector3(1, 1, -1),
+      new THREE.Vector3(-1, -1, -1),
+      new THREE.Vector3(1, -1, -1),
+    ];
+    const farPoints = nearPoints.map((point) => point.clone().multiplyScalar(5));
+    const geometry = buildProjectionVolumeGeometry(
+      nearPoints,
+      farPoints,
+      2,
+      2,
+    );
+
+    expect(geometry.getAttribute("position").count).toBe(30);
+    const progress = geometry.getAttribute("beamProgress");
+    expect(progress.count).toBe(30);
+    expect(Math.min(...Array.from(progress.array))).toBe(0);
+    expect(Math.max(...Array.from(progress.array))).toBe(1);
   });
+
 });

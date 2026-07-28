@@ -9,8 +9,6 @@ type ProjectionVolume = {
 
 type ClipPlane = (point: THREE.Vector3) => number;
 
-export const PROJECTED_SURFACE_EDGE_SCALE = 1.015;
-
 function clipPolygon(
   polygon: THREE.Vector3[],
   plane: ClipPlane,
@@ -48,7 +46,7 @@ export function buildProjectedSurfaceGeometry(
   const projectorToSource = sourceToProjector.clone().invert();
   const halfHeightFactor = Math.tan(
     (volume.verticalFov * Math.PI) / 360,
-  ) * PROJECTED_SURFACE_EDGE_SCALE;
+  );
   const halfWidthFactor = halfHeightFactor * volume.aspect;
   const planes: ClipPlane[] = [
     (point) => -point.z * halfWidthFactor - point.x,
@@ -111,6 +109,106 @@ export function buildProjectedSurfaceGeometry(
   geometry.setAttribute(
     "position",
     new THREE.Float32BufferAttribute(output, 3),
+  );
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+export function buildProjectionVolumeGeometry(
+  nearPoints: THREE.Vector3[],
+  farPoints: THREE.Vector3[],
+  columns: number,
+  rows: number,
+): THREE.BufferGeometry {
+  const output: number[] = [];
+  const progress: number[] = [];
+  const addTriangle = (
+    first: [THREE.Vector3, number],
+    second: [THREE.Vector3, number],
+    third: [THREE.Vector3, number],
+  ) => {
+    const [firstPoint, firstProgress] = first;
+    const [secondPoint, secondProgress] = second;
+    const [thirdPoint, thirdProgress] = third;
+    output.push(
+      firstPoint.x,
+      firstPoint.y,
+      firstPoint.z,
+      secondPoint.x,
+      secondPoint.y,
+      secondPoint.z,
+      thirdPoint.x,
+      thirdPoint.y,
+      thirdPoint.z,
+    );
+    progress.push(firstProgress, secondProgress, thirdProgress);
+  };
+  const addQuad = (
+    first: [THREE.Vector3, number],
+    second: [THREE.Vector3, number],
+    third: [THREE.Vector3, number],
+    fourth: [THREE.Vector3, number],
+  ) => {
+    addTriangle(first, second, third);
+    addTriangle(first, third, fourth);
+  };
+
+  for (let row = 0; row < rows - 1; row += 1) {
+    for (let column = 0; column < columns - 1; column += 1) {
+      const topLeft = row * columns + column;
+      const topRight = topLeft + 1;
+      const bottomLeft = topLeft + columns;
+      const bottomRight = bottomLeft + 1;
+      addQuad(
+        [farPoints[topLeft], 1],
+        [farPoints[bottomLeft], 1],
+        [farPoints[bottomRight], 1],
+        [farPoints[topRight], 1],
+      );
+    }
+  }
+  for (let column = 0; column < columns - 1; column += 1) {
+    addQuad(
+      [nearPoints[column], 0],
+      [farPoints[column], 1],
+      [farPoints[column + 1], 1],
+      [nearPoints[column + 1], 0],
+    );
+    const bottomLeft = (rows - 1) * columns + column;
+    addQuad(
+      [nearPoints[bottomLeft + 1], 0],
+      [farPoints[bottomLeft + 1], 1],
+      [farPoints[bottomLeft], 1],
+      [nearPoints[bottomLeft], 0],
+    );
+  }
+  for (let row = 0; row < rows - 1; row += 1) {
+    const left = row * columns;
+    const nextLeft = left + columns;
+    addQuad(
+      [nearPoints[nextLeft], 0],
+      [farPoints[nextLeft], 1],
+      [farPoints[left], 1],
+      [nearPoints[left], 0],
+    );
+    const right = left + columns - 1;
+    const nextRight = right + columns;
+    addQuad(
+      [nearPoints[right], 0],
+      [farPoints[right], 1],
+      [farPoints[nextRight], 1],
+      [nearPoints[nextRight], 0],
+    );
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute(
+    "position",
+    new THREE.Float32BufferAttribute(output, 3),
+  );
+  geometry.setAttribute(
+    "beamProgress",
+    new THREE.Float32BufferAttribute(progress, 1),
   );
   geometry.computeVertexNormals();
   return geometry;

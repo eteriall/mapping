@@ -8,10 +8,17 @@ type FrustumOptions = {
 type Point = [number, number, number];
 
 export const RECTANGULAR_PROJECTOR_PENUMBRA = 0;
+export const PROJECTOR_COOKIE_OVERSCAN = 1.04;
 
-export function projectionCookieSize(aspect: number): [number, number] {
+export function projectionCookieSize(
+  aspect: number,
+  overscan = 1,
+): [number, number] {
   const diagonal = Math.hypot(aspect, 1);
-  return [(2 * aspect) / diagonal, 2 / diagonal];
+  return [
+    (2 * aspect) / diagonal / overscan,
+    2 / diagonal / overscan,
+  ];
 }
 
 export function projectionWidthToFov(
@@ -51,6 +58,17 @@ export function projectionFrustumSegments({
     [farHalfWidth, -farHalfHeight, -far],
     [-farHalfWidth, -farHalfHeight, -far],
   ];
+  return frustumSegmentsFromCorners(
+    corners.slice(0, 4) as [Point, Point, Point, Point],
+    corners.slice(4) as [Point, Point, Point, Point],
+  );
+}
+
+export function frustumSegmentsFromCorners(
+  nearCorners: [Point, Point, Point, Point],
+  farCorners: [Point, Point, Point, Point],
+): number[] {
+  const corners = [...nearCorners, ...farCorners];
   const edges = [
     [0, 1],
     [1, 2],

@@ -67,9 +67,13 @@ describe("projected surface mesh", () => {
 
     expect(geometry.getAttribute("position").count).toBe(30);
     const progress = geometry.getAttribute("beamProgress");
+    const beamUv = geometry.getAttribute("beamUv");
     expect(progress.count).toBe(30);
+    expect(beamUv.count).toBe(30);
     expect(Math.min(...Array.from(progress.array))).toBe(0);
     expect(Math.max(...Array.from(progress.array))).toBe(1);
+    expect(Math.min(...Array.from(beamUv.array))).toBe(0);
+    expect(Math.max(...Array.from(beamUv.array))).toBe(1);
   });
 
 });

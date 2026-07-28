@@ -7,7 +7,6 @@ export const STAGE_SHADOW_MAP = {
 
 export const PROJECTION_CONTOUR_COLOR = 0xff3e9d;
 export const PROJECTION_CONTOUR_WIDTH = 3;
-export const VOLUME_COLOR_SAMPLE_GRID = 4;
 
 const UNMASKED_SPOTLIGHT_MAP_FALLBACK =
   "directLight.color = inSpotLightMap ? directLight.color * spotColor.rgb : directLight.color;";
@@ -29,3 +28,6 @@ export function installMappedSpotlightMask(): void {
 
 export const DEFAULT_VOLUME_INTENSITY = 0.3;
 export const DEFAULT_VOLUME_FALLOFF = 3;
+export const VOLUME_GRID_COLUMNS = 33;
+export const VOLUME_GRID_ROWS = 21;
+export const VOLUME_CELL_SMOOTHING = 0.65;

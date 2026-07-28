@@ -53,7 +53,9 @@ import {
   PROJECTION_CONTOUR_COLOR,
   PROJECTION_CONTOUR_WIDTH,
   STAGE_SHADOW_MAP,
-  VOLUME_COLOR_SAMPLE_GRID,
+  VOLUME_CELL_SMOOTHING,
+  VOLUME_GRID_COLUMNS,
+  VOLUME_GRID_ROWS,
 } from "@/lib/stage-rendering";
 import { activeLayers } from "@/lib/timeline";
 import { useStudioStore } from "@/lib/studio-store";
@@ -664,77 +666,57 @@ function ProjectorVolume({
 }) {
   const groupRef = useRef<THREE.Group>(null);
   const meshRef = useRef<THREE.Mesh>(null);
-  const { gl, scene } = useThree();
+  const { scene } = useThree();
   const frame = useRef(0);
   const signature = useRef("");
   const geometry = useMemo(() => new THREE.BufferGeometry(), []);
-  const averageTarget = useFBO(1, 1, {
-    depthBuffer: false,
-    magFilter: THREE.LinearFilter,
-    minFilter: THREE.LinearFilter,
-    stencilBuffer: false,
-  });
-  const averageScene = useMemo(() => new THREE.Scene(), []);
-  const averageCamera = useMemo(
-    () => new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1),
-    [],
-  );
-  const averageGeometry = useMemo(() => new THREE.PlaneGeometry(2, 2), []);
-  const averageMaterial = useMemo(
-    () =>
-      new THREE.ShaderMaterial({
-        depthTest: false,
-        depthWrite: false,
-        fragmentShader: `
-          uniform sampler2D uProjectionTexture;
-          void main() {
-            vec3 averageColor = vec3(0.0);
-            for (int y = 0; y < ${VOLUME_COLOR_SAMPLE_GRID}; y++) {
-              for (int x = 0; x < ${VOLUME_COLOR_SAMPLE_GRID}; x++) {
-                vec2 sampleUv = (
-                  vec2(float(x), float(y)) + 0.5
-                ) / ${VOLUME_COLOR_SAMPLE_GRID}.0;
-                averageColor += texture2D(
-                  uProjectionTexture,
-                  sampleUv
-                ).rgb;
-              }
-            }
-            averageColor /= ${VOLUME_COLOR_SAMPLE_GRID ** 2}.0;
-            gl_FragColor = vec4(averageColor, 1.0);
-          }
-        `,
-        uniforms: {
-          uProjectionTexture: { value: projectionTexture },
-        },
-        vertexShader: `
-          void main() {
-            gl_Position = vec4(position.xy, 0.0, 1.0);
-          }
-        `,
-      }),
-    [projectionTexture],
-  );
+  const cookieScale = useMemo(() => {
+    const [width, height] = projectionCookieSize(
+      aspect,
+      PROJECTOR_COOKIE_OVERSCAN,
+    );
+    return new THREE.Vector2(width / 2, height / 2);
+  }, [aspect]);
   const material = useMemo(() => {
     const value = new THREE.ShaderMaterial({
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       fragmentShader: `
           varying float vBeamProgress;
-          uniform sampler2D uAverageColor;
+          varying vec2 vBeamUv;
+          uniform sampler2D uProjectionTexture;
+          uniform vec2 uCookieScale;
+          uniform float uCellSmoothing;
           uniform float uVolumeFalloff;
           uniform float uVolumeIntensity;
           void main() {
-            vec3 averageColor = texture2D(
-              uAverageColor,
-              vec2(0.5)
-            ).rgb;
+            vec2 cookieUv = vec2(0.5) + (vBeamUv - vec2(0.5)) * uCookieScale;
+            vec2 smoothing = fwidth(cookieUv) * uCellSmoothing;
+            vec3 beamColor = (
+              texture2D(uProjectionTexture, cookieUv).rgb * 4.0
+              + texture2D(
+                uProjectionTexture,
+                cookieUv + vec2(smoothing.x, 0.0)
+              ).rgb
+              + texture2D(
+                uProjectionTexture,
+                cookieUv - vec2(smoothing.x, 0.0)
+              ).rgb
+              + texture2D(
+                uProjectionTexture,
+                cookieUv + vec2(0.0, smoothing.y)
+              ).rgb
+              + texture2D(
+                uProjectionTexture,
+                cookieUv - vec2(0.0, smoothing.y)
+              ).rgb
+            ) / 8.0;
             float fade = pow(
               max(0.0, 1.0 - vBeamProgress),
               uVolumeFalloff
             );
             gl_FragColor = vec4(
-              averageColor,
+              beamColor,
               uVolumeIntensity * fade
             );
           }
@@ -742,49 +724,37 @@ function ProjectorVolume({
       side: THREE.DoubleSide,
       transparent: true,
       uniforms: {
-        uAverageColor: { value: averageTarget.texture },
+        uCellSmoothing: { value: VOLUME_CELL_SMOOTHING },
+        uCookieScale: { value: cookieScale },
+        uProjectionTexture: { value: projectionTexture },
         uVolumeFalloff: { value: volumeFalloff },
         uVolumeIntensity: { value: intensity },
       },
       vertexShader: `
           attribute float beamProgress;
+          attribute vec2 beamUv;
           varying float vBeamProgress;
+          varying vec2 vBeamUv;
           void main() {
             vBeamProgress = beamProgress;
+            vBeamUv = beamUv;
             gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
           }
         `,
     });
     value.toneMapped = false;
     return value;
-  }, [averageTarget.texture, intensity, volumeFalloff]);
-
-  useEffect(() => {
-    const averageMesh = new THREE.Mesh(averageGeometry, averageMaterial);
-    averageScene.add(averageMesh);
-    return () => {
-      averageScene.remove(averageMesh);
-      averageMaterial.dispose();
-    };
-  }, [averageGeometry, averageMaterial, averageScene]);
+  }, [cookieScale, intensity, projectionTexture, volumeFalloff]);
 
   useEffect(
     () => () => {
-      averageGeometry.dispose();
-      averageTarget.dispose();
       geometry.dispose();
     },
-    [averageGeometry, averageTarget, geometry],
+    [geometry],
   );
   useEffect(() => () => material.dispose(), [material]);
 
   useFrame(() => {
-    if (projectionTexture) {
-      const previousTarget = gl.getRenderTarget();
-      gl.setRenderTarget(averageTarget);
-      gl.render(averageScene, averageCamera);
-      gl.setRenderTarget(previousTarget);
-    }
     frame.current += 1;
     const group = groupRef.current;
     const mesh = meshRef.current;
@@ -825,8 +795,8 @@ function ProjectorVolume({
     signature.current = nextSignature;
     const origin = group.getWorldPosition(new THREE.Vector3());
     const halfHeight = Math.tan((verticalFov * Math.PI) / 360);
-    const columns = 17;
-    const rows = 11;
+    const columns = VOLUME_GRID_COLUMNS;
+    const rows = VOLUME_GRID_ROWS;
     const nearPoints: THREE.Vector3[] = [];
     const farPoints: THREE.Vector3[] = [];
     const raycaster = new THREE.Raycaster();

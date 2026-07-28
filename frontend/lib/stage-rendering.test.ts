@@ -9,7 +9,9 @@ import {
   PROJECTION_CONTOUR_COLOR,
   PROJECTION_CONTOUR_WIDTH,
   STAGE_SHADOW_MAP,
-  VOLUME_COLOR_SAMPLE_GRID,
+  VOLUME_CELL_SMOOTHING,
+  VOLUME_GRID_COLUMNS,
+  VOLUME_GRID_ROWS,
 } from "@/lib/stage-rendering";
 
 it("uses the supported percentage-closer shadow map", () => {
@@ -25,13 +27,15 @@ it("uses a bold pink projected-surface contour", () => {
   expect(PROJECTION_CONTOUR_WIDTH).toBe(3);
 });
 
-it("samples sixteen projector pixels for live volume color", () => {
-  expect(VOLUME_COLOR_SAMPLE_GRID ** 2).toBe(16);
-});
-
 it("starts projector volume bright and fades it quickly", () => {
   expect(DEFAULT_VOLUME_INTENSITY).toBe(0.3);
   expect(DEFAULT_VOLUME_FALLOFF).toBe(3);
+});
+
+it("uses a dense projector volume grid for smooth intersections", () => {
+  expect(VOLUME_GRID_COLUMNS * VOLUME_GRID_ROWS).toBeGreaterThan(600);
+  expect(VOLUME_CELL_SMOOTHING).toBeGreaterThan(0);
+  expect(VOLUME_CELL_SMOOTHING).toBeLessThan(1);
 });
 
 it("blocks mapped spotlight light outside the projector texture", () => {

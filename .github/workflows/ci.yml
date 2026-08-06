@@ -47,6 +47,7 @@ jobs:
       - run: pip install -r backend/requirements.txt ruff
       - run: ruff check backend
       - run: ruff format --check backend
+      - run: python backend/server/manage.py collectstatic --noinput
       - run: python backend/server/manage.py test
 
   frontend:

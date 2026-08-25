@@ -1,4 +1,4 @@
-FROM node:24-slim AS node-runtime
+FROM node:25-slim AS node-runtime
 
 FROM python:3.12-slim
 

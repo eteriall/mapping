@@ -1,6 +1,6 @@
 services:
   mapping-backend:
-    restart: unless-stopped
+    restart: "no"
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -20,7 +20,7 @@ services:
         condition: service_healthy
 
   mapping-frontend:
-    restart: unless-stopped
+    restart: "no"
     build:
       context: ./frontend
       dockerfile: Dockerfile
@@ -29,7 +29,7 @@ services:
       - mapping-backend
 
   mapping-proxy:
-    restart: unless-stopped
+    restart: "no"
     build:
       context: ./proxy
       dockerfile: Dockerfile
@@ -44,7 +44,7 @@ services:
       - media_data:/srv/mapping-media:ro
 
   mapping-postgres:
-    restart: unless-stopped
+    restart: "no"
     image: postgres:16-alpine
     container_name: mapping-postgres
     environment:
